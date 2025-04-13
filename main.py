@@ -163,8 +163,12 @@ async def add_error_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
-  if user_input.isdigit():
-        user_input = f"ORA-{user_input}"
+# Güvenli ORA kodu algılama:
+if user_input.startswith("ORA-") and user_input[4:].isdigit():
+    pass  # zaten doğru format
+elif user_input.isdigit():
+    user_input = f"ORA-{user_input}"
+  
     user = update.message.from_user
     if user_input.startswith("ORA-"):
         original_text = search_error_code(user_input)
