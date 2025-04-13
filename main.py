@@ -164,6 +164,8 @@ async def add_error_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
     user = update.message.from_user
+  if user_input.isdigit():
+        user_input = f"ORA-{user_input}"
     if user_input.startswith("ORA-"):
         original_text = search_error_code(user_input)
         log_query(user.id, user.username or "Anonim", user_input)
