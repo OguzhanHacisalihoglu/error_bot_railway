@@ -15,7 +15,7 @@ JSON_PATH = "oracle_errors.json"
 PDF_PATH = "oracle_errors.pdf"
 LOG_PATH = "query_log.json"
 
-ADMIN_USER_ID = int(os.getenv(\"ADMIN_USER_ID\", \"0\"))
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 
 # Sorgu loglama
 def log_query(user_id, username, code):
