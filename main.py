@@ -105,8 +105,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "- /stats → bot kullanım istatistikleri\n"
         "- /random → rastgele hata göster\n"
         "- /feedback [mesaj] → öneri gönder\n"
-        "- /download_log → log csv dosyasını indir (sadece admin)\n"
-        "- /log_summary → log özeti göster (sadece admin)"
     )
 
 
