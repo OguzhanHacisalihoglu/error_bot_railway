@@ -1,5 +1,7 @@
+# main.py
 import os
 import json
+import random
 import fitz  # PyMuPDF
 from dotenv import load_dotenv
 from telegram import Update
@@ -7,18 +9,32 @@ from telegram.ext import (ApplicationBuilder, ContextTypes,
                           CommandHandler, MessageHandler, filters)
 from deep_translator import GoogleTranslator
 
-# Ortam degiskenlerini yukle
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 JSON_PATH = "oracle_errors.json"
 PDF_PATH = "oracle_errors.pdf"
+LOG_PATH = "query_log.json"
+
+ADMIN_USER_ID = 123456789  # Burayı kendi Telegram user ID'nin ile değiştir
+
+# Sorgu loglama
+def log_query(user_id, username, code):
+    if not os.path.exists(LOG_PATH):
+        with open(LOG_PATH, "w", encoding="utf-8") as f:
+            json.dump([], f)
+
+    with open(LOG_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    data.append({"user_id": user_id, "username": username, "code": code})
+
+    with open(LOG_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-# 1. PDF'i JSON'a Donustur (ilk calistirmada kullan)
 def convert_pdf_to_json(pdf_path=PDF_PATH, json_path=JSON_PATH):
     doc = fitz.open(pdf_path)
     errors = {}
-
     for page in doc:
         text = page.get_text()
         lines = text.splitlines()
@@ -27,45 +43,32 @@ def convert_pdf_to_json(pdf_path=PDF_PATH, json_path=JSON_PATH):
                 code = line.split()[0].strip()
                 explanation = " ".join(lines[i:i+5]).strip()
                 errors[code] = explanation
-
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(errors, f, ensure_ascii=False, indent=2)
 
 
-# 2. JSON'dan hata kodu sorgula
-def search_error_code(code):
+def load_data():
     if not os.path.exists(JSON_PATH):
         convert_pdf_to_json()
-
     with open(JSON_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        return json.load(f)
 
+
+def search_error_code(code):
+    data = load_data()
     code = code.strip().upper()
-
-    # Doğrudan eşleşme varsa dön
     if code in data:
         return data[code]
-
-    # Eşleşmeyen ama benzer kod varsa kontrol et
     for k in data:
         if code in k:
             return data[k]
-
     return None
 
 
-
-# 3. JSON'da içerik araması yap
 def search_by_keyword(keyword):
-    if not os.path.exists(JSON_PATH):
-        convert_pdf_to_json()
-
-    with open(JSON_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
+    data = load_data()
     keyword = keyword.strip().lower()
     results = {}
-
     for code, text in data.items():
         if keyword in code.lower() or keyword in text.lower():
             results[code] = text
@@ -73,56 +76,166 @@ def search_by_keyword(keyword):
             results[code] = text
         elif keyword.isdigit() and keyword in code:
             results[code] = text
-
     return results
 
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Merhaba!\n\n"
+        "Ben Oracle hata kodlarını açıklayan bir botum.\n\n"
+        "🧰 Kullanım:\n"
+        "- ORA-00904 gibi bir hata kodu gönder.\n"
+        "- /search [kelime] → içerik ara\n"
+        "- /popular → en sık arananlar\n"
+        "- /stats → bot kullanım istatistikleri\n"
+        "- /random → rastgele hata göster\n"
+        "- /feedback [mesaj] → öneri gönder"
+    )
 
-# 4. /search komutu
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_command(update, context)
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Lütfen bir anahtar kelime girin. Örnek: /search column")
+        await update.message.reply_text("🔍 Lütfen bir anahtar kelime girin. Örnek: /search column")
         return
-
     keyword = " ".join(context.args)
     results = search_by_keyword(keyword)
-
     if not results:
         await update.message.reply_text(f"'{keyword}' ile ilgili sonuç bulunamadı.")
         return
-
     message = f"🔍 '{keyword}' için bulunan sonuçlar:\n"
     for code, text in list(results.items())[:5]:
         message += f"\n📘 {code}: {text[:150]}..."
     await update.message.reply_text(message)
 
 
-# 5. Mesajları işleme fonksiyonu
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    message = " ".join(context.args)
+    if not message:
+        await update.message.reply_text("Lütfen geri bildiriminizi yazın. Örn: /feedback ORA-01017 çevirisi geliştirilmeli.")
+        return
+    await context.bot.send_message(chat_id=ADMIN_USER_ID, text=f"📩 Feedback from {user.username or user.first_name}:\n{message}")
+    await update.message.reply_text("Teşekkürler! Geri bildiriminiz iletildi ✅")
+
+
+async def reload_json_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        await update.message.reply_text("Bu komutu kullanma yetkiniz yok.")
+        return
+    convert_pdf_to_json()
+    await update.message.reply_text("✅ JSON veritabanı yeniden oluşturuldu.")
+
+
+async def add_error_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        await update.message.reply_text("Bu komutu kullanamazsınız.")
+        return
+    try:
+        code = context.args[0].strip().upper()
+        explanation = " ".join(context.args[1:]).strip()
+        data = load_data()
+        data[code] = explanation
+        with open(JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        await update.message.reply_text(f"✅ {code} başarıyla eklendi veya güncellendi.")
+    except Exception as e:
+        await update.message.reply_text(f"Hata oluştu: {e}")
+
+
+async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        await update.message.reply_text("Bu komutu kullanamazsınız.")
+        return
+    if not os.path.exists(LOG_PATH):
+        await update.message.reply_text("Log dosyası bulunamadı.")
+        return
+    with open(LOG_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    last_entries = data[-5:] if len(data) > 5 else data
+    message = "📜 Son sorgular:\n"
+    for entry in last_entries:
+        message += f"👤 @{entry['username']} → {entry['code']}\n"
+    await update.message.reply_text(message)
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.exists(LOG_PATH):
+        await update.message.reply_text("Henüz istatistik yok.")
+        return
+    with open(LOG_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    total_queries = len(data)
+    unique_users = len(set(d['user_id'] for d in data))
+    await update.message.reply_text(f"📈 Toplam sorgu: {total_queries}\n👥 Kullanıcı sayısı: {unique_users}")
+
+
+async def popular_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.exists(LOG_PATH):
+        await update.message.reply_text("Henüz sorgu yapılmadı.")
+        return
+    with open(LOG_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    counter = {}
+    for d in data:
+        code = d['code']
+        counter[code] = counter.get(code, 0) + 1
+    sorted_codes = sorted(counter.items(), key=lambda x: x[1], reverse=True)
+    message = "🔥 En çok aranan 5 hata kodu:\n"
+    for i, (code, count) in enumerate(sorted_codes[:5], 1):
+        message += f"{i}. {code} – {count} sorgu\n"
+    await update.message.reply_text(message)
+
+
+async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = load_data()
+    code = random.choice(list(data.keys()))
+    text = data[code]
+    try:
+        translated = GoogleTranslator(source='auto', target='tr').translate(text)
+        message = f"🎲 Rastgele Hata: {code}\n\n📘 Orijinal:\n{text}\n\n🔄 Türkçe:\n{translated}"
+    except:
+        message = f"🎲 Rastgele Hata: {code}\n\n📘 Açıklama:\n{text}"
+    await update.message.reply_text(message)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
+    user = update.message.from_user
 
     if user_input.startswith("ORA-"):
         original_text = search_error_code(user_input)
-
+        log_query(user.id, user.username or "Anonim", user_input)
         if original_text:
             try:
                 translated_text = GoogleTranslator(source='auto', target='tr').translate(original_text)
                 message = (
-                    f"📘 Orijinal:\n{original_text}\n\n"
-                    f"🔄 Türkçe Çeviri:\n{translated_text}"
+                    f"📘 Hata: {user_input}\n\n"
+                    f"🧠 Açıklama:\n{original_text}\n\n"
+                    f"🔄 Türkçe Çeviri:\n{translated_text}\n\n"
+                    f"🔗 Detay: https://docs.oracle.com/error-help/db/{user_input.lower()}"
                 )
                 await update.message.reply_text(message)
-            except Exception as e:
-                await update.message.reply_text(
-                    f"📘 Orijinal:\n{original_text}\n\n⚠️ Çeviri hatası: {e}"
-                )
+            except:
+                await update.message.reply_text(f"📘 {user_input}: {original_text}")
         else:
             await update.message.reply_text("❗ Bu hata kodu veritabanında bulunamadı.")
     else:
-        await update.message.reply_text("Lütfen geçerli bir Oracle hata kodu girin (örn: ORA-00904) ya da /search komutunu kullanın.")
+        await update.message.reply_text("❓ ORA- ile başlayan geçerli bir hata kodu girin ya da /komutları kullanın.")
 
 
-# 6. Botu başlat
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+app.add_handler(CommandHandler("start", start_command))
+app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("search", search_command))
+app.add_handler(CommandHandler("feedback", feedback_command))
+app.add_handler(CommandHandler("reload_json", reload_json_command))
+app.add_handler(CommandHandler("add_error", add_error_command))
+app.add_handler(CommandHandler("log", log_command))
+app.add_handler(CommandHandler("stats", stats_command))
+app.add_handler(CommandHandler("popular", popular_command))
+app.add_handler(CommandHandler("random", random_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.run_polling()
