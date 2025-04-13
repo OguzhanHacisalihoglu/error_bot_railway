@@ -15,7 +15,7 @@ JSON_PATH = "oracle_errors.json"
 PDF_PATH = "oracle_errors.pdf"
 LOG_PATH = "query_log.json"
 
-ADMIN_USER_ID = 123456789  # Burayı kendi Telegram user ID'nin ile değiştir
+ADMIN_USER_ID = 156704648  # Burayı kendi Telegram user ID'nin ile değiştir
 
 # Sorgu loglama
 def log_query(user_id, username, code):
