@@ -163,13 +163,16 @@ async def add_error_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
-# Güvenli ORA kodu algılama:
-if user_input.startswith("ORA-") and user_input[4:].isdigit():
-    pass  # zaten doğru format
-elif user_input.isdigit():
-    user_input = f"ORA-{user_input}"
-  
+
+    # Eğer sadece sayı yazıldıysa ORA- ile tamamla
+    if user_input.isdigit():
+        user_input = f"ORA-{user_input}"
+    elif user_input.startswith("ORA-") and not user_input[4:].isdigit():
+        await update.message.reply_text("Geçerli bir ORA kodu girin. Örn: ORA-00904 veya sadece 904")
+        return
+
     user = update.message.from_user
+
     if user_input.startswith("ORA-"):
         original_text = search_error_code(user_input)
         log_query(user.id, user.username or "Anonim", user_input)
@@ -182,14 +185,15 @@ elif user_input.isdigit():
                     f"🔄 Türkçe Çeviri:\n{translated_text}\n\n"
                     f"🔗 Detay: https://docs.oracle.com/error-help/db/{user_input.lower()}"
                 )
-                await update.message.reply_text(message)
             except:
-                await update.message.reply_text(f"📘 {user_input}: {original_text}")
+                message = f"📘 {user_input}: {original_text}"
         else:
-            await update.message.reply_text("❗ Bu hata kodu veritabanında bulunamadı.")
-    else:
-        await update.message.reply_text("❓ ORA- ile başlayan geçerli bir hata kodu girin ya da /komutları kullanın.")
+            message = "❗ Bu hata kodu veritabanında bulunamadı."
 
+        await update.message.reply_text(message)
+    else:
+        await update.message.reply_text("❓ Lütfen geçerli bir ORA hata kodu girin. (örn: ORA-00904 ya da sadece 904)")
+      
 # main.py (tam ve güncel – eksik random, stats, popular, log_summary, download_log fonksiyonları eklendi)
 # ... önceki kod devam ediyor ...
 
