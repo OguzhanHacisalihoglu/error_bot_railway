@@ -161,6 +161,9 @@ async def add_error_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Hata oluştu: {e}")
 
 
+# main.py (tam ve güncel – Google'da arama linki eklendi)
+# ... önceki kodlar aynı ...
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
 
@@ -187,24 +190,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 message = f"📘 {user_input}: {original_text}"
 
-            # Ek kaynaklar
-            url_code = user_input.replace('ORA-', '')
-            links = [
-                f"https://stackoverflow.com/search?q=ORA-{url_code}",
-                f"https://docs.oracle.com/error-help/db/ora-{url_code}",
-                f"https://www.dba-oracle.com/t_ora_{url_code}.htm",
-                f"https://oracle-base.com/articles/misc/ora-{url_code}",
-                f"https://www.geeksforgeeks.org/?s=ORA-{url_code}"
-            ]
-            link_text = "\n🌐 Ek Kaynaklar:\n" + "\n".join([f"{i+1}. {site.split('/')[2]}: {site}" for i, site in enumerate(links)])
-            message += f"\n{link_text}"
+            # Google arama bağlantısı
+            google_url = f"https://www.google.com/search?q={user_input}"
+            message += f"\n🌐 Google'da Ara:\n{google_url}"
         else:
             message = "❗ Bu hata kodu veritabanında bulunamadı."
 
         await update.message.reply_text(message)
     else:
         await update.message.reply_text("❓ Lütfen geçerli bir ORA hata kodu girin. (örn: ORA-00904 ya da sadece 904)")
-      
+
 # main.py (tam ve güncel – eksik random, stats, popular, log_summary, download_log fonksiyonları eklendi)
 # ... önceki kod devam ediyor ...
 
