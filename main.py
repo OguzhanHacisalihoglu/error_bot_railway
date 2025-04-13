@@ -164,7 +164,6 @@ async def add_error_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
 
-    # Eğer sadece sayı yazıldıysa ORA- ile tamamla
     if user_input.isdigit():
         user_input = f"ORA-{user_input}"
     elif user_input.startswith("ORA-") and not user_input[4:].isdigit():
@@ -187,6 +186,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except:
                 message = f"📘 {user_input}: {original_text}"
+
+            # Ek kaynaklar
+            url_code = user_input.replace('ORA-', '')
+            links = [
+                f"https://stackoverflow.com/search?q=ORA-{url_code}",
+                f"https://docs.oracle.com/error-help/db/ora-{url_code}",
+                f"https://www.dba-oracle.com/t_ora_{url_code}.htm",
+                f"https://oracle-base.com/articles/misc/ora-{url_code}",
+                f"https://www.geeksforgeeks.org/?s=ORA-{url_code}"
+            ]
+            link_text = "\n🌐 Ek Kaynaklar:\n" + "\n".join([f"{i+1}. {site.split('/')[2]}: {site}" for i, site in enumerate(links)])
+            message += f"\n{link_text}"
         else:
             message = "❗ Bu hata kodu veritabanında bulunamadı."
 
