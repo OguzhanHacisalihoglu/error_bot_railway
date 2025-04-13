@@ -1,4 +1,4 @@
-# main.py (güncellenmiş – /download_log ve /log_summary eklendi)
+# main.py (tam komut paketi: /random, /stats, /popular, /download_log, /log_summary)
 import os
 import json
 import random
@@ -18,6 +18,13 @@ JSON_PATH = "oracle_errors.json"
 PDF_PATH = "oracle_errors.pdf"
 LOG_PATH = "query_log.json"
 LOG_CSV_PATH = "query_log.csv"
+
+
+def load_data():
+    if not os.path.exists(JSON_PATH):
+        return {}
+    with open(JSON_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def log_query(user_id, username, code):
@@ -47,71 +54,66 @@ def export_log_to_csv():
     return True
 
 
-def convert_pdf_to_json(pdf_path=PDF_PATH, json_path=JSON_PATH):
-    doc = fitz.open(pdf_path)
-    errors = {}
-    for page in doc:
-        text = page.get_text()
-        lines = text.splitlines()
-        for i, line in enumerate(lines):
-            if line.startswith("ORA-") and ":" in line:
-                code = line.split()[0].strip()
-                explanation = " ".join(lines[i:i+5]).strip()
-                errors[code] = explanation
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(errors, f, ensure_ascii=False, indent=2)
+# Komutlar
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Merhaba!\n\n"
+        "Ben Oracle hata kodlarını açıklayan bir botum.\n\n"
+        "🧰 Kullanım:\n"
+        "- ORA-00904 gibi bir hata kodu gönder.\n"
+        "- /search [kelime] → içerik ara\n"
+        "- /popular → en sık arananlar\n"
+        "- /stats → bot kullanım istatistikleri\n"
+        "- /random → rastgele hata göster\n"
+        "- /feedback [mesaj] → öneri gönder\n"
+        "- /download_log → log csv dosyasını indir (sadece admin)\n"
+        "- /log_summary → log özeti göster (sadece admin)"
+    )
 
 
-def load_data():
-    if not os.path.exists(JSON_PATH):
-        convert_pdf_to_json()
-    with open(JSON_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def search_error_code(code):
+async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
-    code = code.strip().upper()
-    if code in data:
-        return data[code]
-    for k in data:
-        if code in k:
-            return data[k]
-    return None
+    if not data:
+        await update.message.reply_text("Veri tabanı boş.")
+        return
+    code = random.choice(list(data.keys()))
+    text = data[code]
+    try:
+        translated = GoogleTranslator(source='auto', target='tr').translate(text)
+        message = f"🎲 Rastgele Hata: {code}\n\n📘 Orijinal:\n{text}\n\n🔄 Türkçe:\n{translated}"
+    except:
+        message = f"🎲 Rastgele Hata: {code}\n\n📘 Açıklama:\n{text}"
+    await update.message.reply_text(message)
 
 
-def search_by_keyword(keyword):
-    data = load_data()
-    keyword = keyword.strip().lower()
-    results = {}
-    for code, text in data.items():
-        if keyword in code.lower() or keyword in text.lower():
-            results[code] = text
-        elif keyword.replace("ora-", "") in code.lower():
-            results[code] = text
-        elif keyword.isdigit() and keyword in code:
-            results[code] = text
-    return results
-
-
-# Güncellenmiş: log özetini admin’e mesaj ve CSV dosyası olarak gönder
-async def send_log_summary(context: ContextTypes.DEFAULT_TYPE):
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not os.path.exists(LOG_PATH):
+        await update.message.reply_text("Henüz istatistik yok.")
         return
     with open(LOG_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if not data:
+    total_queries = len(data)
+    unique_users = len(set(d['user_id'] for d in data))
+    await update.message.reply_text(f"📈 Toplam sorgu: {total_queries}\n👥 Kullanıcı sayısı: {unique_users}")
+
+
+async def popular_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.exists(LOG_PATH):
+        await update.message.reply_text("Henüz sorgu yapılmadı.")
         return
-    summary = "🗒️ Son 5 sorgu:\n"
-    for entry in data[-5:]:
-        summary += f"👤 @{entry['username']} → {entry['code']}\n"
-    await context.bot.send_message(chat_id=ADMIN_USER_ID, text=summary)
-    if export_log_to_csv():
-        with open(LOG_CSV_PATH, "rb") as file:
-            await context.bot.send_document(chat_id=ADMIN_USER_ID, document=InputFile(file, filename="query_log.csv"))
+    with open(LOG_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    counter = {}
+    for d in data:
+        code = d['code']
+        counter[code] = counter.get(code, 0) + 1
+    sorted_codes = sorted(counter.items(), key=lambda x: x[1], reverse=True)
+    message = "🔥 En çok aranan 5 hata kodu:\n"
+    for i, (code, count) in enumerate(sorted_codes[:5], 1):
+        message += f"{i}. {code} – {count} sorgu\n"
+    await update.message.reply_text(message)
 
 
-# Yeni: /download_log komutu → CSV dosyasını manuel gönder
 async def download_log_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_USER_ID:
         await update.message.reply_text("Bu komutu kullanamazsınız.")
@@ -123,7 +125,6 @@ async def download_log_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Log verisi bulunamadı veya boş.")
 
 
-# Yeni: /log_summary komutu → sadece son 5 sorguyu özet mesaj olarak gönder
 async def log_summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_USER_ID:
         await update.message.reply_text("Bu komutu kullanamazsınız.")
@@ -142,88 +143,18 @@ async def log_summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(summary)
 
 
-# Komutlar
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Merhaba!\n\n"
-        "Ben Oracle hata kodlarını açıklayan bir botum.\n\n"
-        "🧰 Kullanım:\n"
-        "- ORA-00904 gibi bir hata kodu gönder.\n"
-        "- /search [kelime] → içerik ara\n"
-        "- /popular → en sık arananlar\n"
-        "- /stats → bot kullanım istatistikleri\n"
-        "- /random → rastgele hata göster\n"
-        "- /feedback [mesaj] → öneri gönder\n"
-        "- /download_log → log csv dosyasını indir (sadece admin)\n"
-        "- /log_summary → log özeti göster (sadece admin)"
-    )
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start_command(update, context)
-
-
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("🔍 Lütfen bir anahtar kelime girin. Örnek: /search column")
-        return
-    keyword = " ".join(context.args)
-    results = search_by_keyword(keyword)
-    if not results:
-        await update.message.reply_text(f"'{keyword}' ile ilgili sonuç bulunamadı.")
-        return
-    message = f"🔍 '{keyword}' için bulunan sonuçlar:\n"
-    for code, text in list(results.items())[:5]:
-        message += f"\n📘 {code}: {text[:150]}..."
-    await update.message.reply_text(message)
-
-
-async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    message = " ".join(context.args)
-    if not message:
-        await update.message.reply_text("Lütfen geri bildiriminizi yazın. Örn: /feedback ORA-01017 çevirisi geliştirilmeli.")
-        return
-    await context.bot.send_message(chat_id=ADMIN_USER_ID, text=f"📩 Feedback from {user.username or user.first_name}:\n{message}")
-    await update.message.reply_text("Teşekkürler! Geri bildiriminiz iletildi ✅")
-
-
 # Botu başlat
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 app.add_handler(CommandHandler("start", start_command))
-app.add_handler(CommandHandler("help", help_command))
-app.add_handler(CommandHandler("search", search_command))
-app.add_handler(CommandHandler("feedback", feedback_command))
+app.add_handler(CommandHandler("random", random_command))
+app.add_handler(CommandHandler("stats", stats_command))
+app.add_handler(CommandHandler("popular", popular_command))
 app.add_handler(CommandHandler("download_log", download_log_command))
 app.add_handler(CommandHandler("log_summary", log_summary_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.application.create_task(handle_message(u, c))))
 
-# Zamanlanmış görev: her 6 saatte bir log özeti + CSV gönder
 job_queue: JobQueue = app.job_queue
-job_queue.run_repeating(send_log_summary, interval=21600, first=60)
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text.strip().upper()
-    user = update.message.from_user
-    if user_input.startswith("ORA-"):
-        original_text = search_error_code(user_input)
-        log_query(user.id, user.username or "Anonim", user_input)
-        if original_text:
-            try:
-                translated_text = GoogleTranslator(source='auto', target='tr').translate(original_text)
-                message = (
-                    f"📘 Hata: {user_input}\n\n"
-                    f"🧠 Açıklama:\n{original_text}\n\n"
-                    f"🔄 Türkçe Çeviri:\n{translated_text}\n\n"
-                    f"🔗 Detay: https://docs.oracle.com/error-help/db/{user_input.lower()}"
-                )
-                await update.message.reply_text(message)
-            except:
-                await update.message.reply_text(f"📘 {user_input}: {original_text}")
-        else:
-            await update.message.reply_text("❗ Bu hata kodu veritabanında bulunamadı.")
-    else:
-        await update.message.reply_text("❓ ORA- ile başlayan geçerli bir hata kodu girin ya da /komutları kullanın.")
+if job_queue:
+    job_queue.run_repeating(send_log_summary, interval=21600, first=60)
 
 app.run_polling()
